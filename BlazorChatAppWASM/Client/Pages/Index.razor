@@ -1,0 +1,115 @@
+﻿@page "/"
+@using Microsoft.AspNetCore.SignalR.Client
+@inject IJSRuntime js
+@inject NavigationManager nav
+
+<InputText @bind-Value="chatData.Content"></InputText>
+<InputFile OnChange="FileSelect"></InputFile>
+<button @onclick="SendData">Send</button>
+
+
+<hr />
+
+<ul>
+	@foreach (var message in messages)
+	{
+		<li>
+			<b>@message.UserName : </b>
+
+			@if (message.IsImg)
+			{
+				<img src="@message.Content" width="300"/>
+			}
+			else
+			{
+				<i>@message.Content</i>
+			}
+			
+			
+		</li>
+	}
+</ul>
+
+
+
+@code {
+	HubConnection hub;
+
+
+	List<ChatMessage> messages = new List<ChatMessage>();
+
+
+	ChatMessage chatData = new ChatMessage();
+
+
+
+	protected override async Task OnInitializedAsync()
+	{
+
+		chatData.UserName = await js.InvokeAsync<string>("prompt", "enter name", "DITC");
+
+		string hubLink = nav.ToAbsoluteUri("/chat").AbsoluteUri;
+
+
+		hub = new HubConnectionBuilder()
+		.WithUrl(hubLink)
+		.WithAutomaticReconnect()
+		.Build();
+
+		ConfigHubClientEvents();
+
+
+		await hub.StartAsync();
+
+
+		await base.OnInitializedAsync();
+	}
+
+	void ConfigHubClientEvents()
+	{
+
+		hub.On<ChatMessage>("ReceiveText", (chatMessage) =>
+		{
+			messages.Add(chatMessage);
+			StateHasChanged();
+		});
+
+		hub.On<ChatMessage>("ReceiveImage", (chatMessage) =>
+		{
+			messages.Add(chatMessage);
+			StateHasChanged();
+		});
+	}
+	void SendData()
+	{
+		hub.InvokeAsync("SendText", chatData);
+
+
+		chatData.Content = "";
+	}
+
+
+
+
+	async void FileSelect(InputFileChangeEventArgs e)
+	{
+		var ms = new MemoryStream();
+
+
+		await e.File.OpenReadStream(e.File.Size).CopyToAsync(ms);
+
+
+
+		chatData.Content = $"data:{e.File.ContentType};base64, {Convert.ToBase64String(ms.ToArray())}";
+
+		chatData.IsImg = true;
+
+
+
+		await hub.InvokeAsync("SendImage", chatData);
+
+		chatData.Content = "";
+		chatData.IsImg =false;
+		StateHasChanged();
+	}
+}
